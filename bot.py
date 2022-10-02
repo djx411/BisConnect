@@ -6,6 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask
 from slackeventsapi import SlackEventAdapter
+import re
 
 
 env_path = Path('.') / '.env'
@@ -20,6 +21,7 @@ slack_event_adapter = SlackEventAdapter(
 
 message_counts = {}
 surveys = {}
+invited = set()
 
 
 class WelcomeMessage:
@@ -29,7 +31,8 @@ class WelcomeMessage:
             'type': 'mrkdwn',
             'text': (
                 'Welcome to this awesome channel!\n\n'
-                '*Get started by completing this survey! React with a :white_check_mark: when you\'re done*'
+                '*Get started by completing this survey! React with a :white_check_mark: when you\'re done*\n\n'
+                'www.placeholder.com'
             )
         }
     }
@@ -57,6 +60,12 @@ class WelcomeMessage:
         }
 
 
+def delete_message_history(channel):
+    history = client.conversations_history(channel=channel).get('messages')
+    for mes in history:
+        client.chat_delete(**mes, channel=channel)
+
+
 def send_welcome_message(channel, user):
     welcome = WelcomeMessage(channel, user)
     message = welcome.get_message()
@@ -68,7 +77,8 @@ def send_welcome_message(channel, user):
 def make_slack_channel(user_ids, interest):
     channel_name = interest.lower() + "-"
     for id in user_ids:
-        name = client.users_info(user=id).get('user').get('name')
+        rawname = client.users_info(user=id).get('user').get('name').lower()
+        name = re.sub("[^A-Za-z]", "", rawname)
         channel_name += name + "-"
     channel_name = channel_name[0:len(channel_name)-1]
     print(channel_name)
@@ -85,38 +95,30 @@ def make_slack_channel(user_ids, interest):
     client.chat_postMessage(channel=channel_id, text=group_welcome)
 
 
-# @slack_event_adapter.on('message')
-# def message(payload):
-#     event = payload.get('event', {})
-#     channel_id = event.get('channel')
-#     user_id = event.get('user')
-#     text = event.get('text')
-#     if user_id != BOT_ID:
-#         client.chat_postMessage(channel='#test', text=text)
-
-
 @slack_event_adapter.on('member_joined_channel')
 def member_joined_channel(payload):
     event = payload.get('event', {})
     channel_id = event.get('channel')
     user_id = event.get('user')
-    # if BOT_ID != user_id and user_id != None:
-    #     send_welcome_message(channel_id, user_id)
-
-
-@slack_event_adapter.on('app_mention')
-def app_mention(payload):
-    # print(payload)
-    event = payload.get('event', {})
-    channel_id = event.get('channel')
-    user_id = event.get('user')
-    # client.chat_postMessage(channel=user_id, as_user=True,
-    #                         text="Hello and welcome to BisConnect. To connect you to your peers, please fill out this form! www.google.com")
-    if BOT_ID != user_id and user_id != None:
+    if BOT_ID != user_id and user_id != None and user_id not in invited:
+        invited.add(user_id)
         send_welcome_message(channel_id, user_id)
-        print("SURVEYS:")
-        print(surveys)
-    make_slack_channel([user_id, 'U044JTNB8CE'], "Soccer")
+        # time.sleep(30)
+        make_slack_channel([user_id, 'U044JTNB8CE', 'U045F7RNLRE'], "Soccer")
+
+# @slack_event_adapter.on('app_mention')
+# def app_mention(payload):
+#     # print(payload)
+#     event = payload.get('event', {})
+#     channel_id = event.get('channel')
+#     user_id = event.get('user')
+#     # client.chat_postMessage(channel=user_id, as_user=True,
+#     #                         text="Hello and welcome to BisConnect. To connect you to your peers, please fill out this form! www.google.com")
+#     if BOT_ID != user_id and user_id != None:
+#         send_welcome_message(channel_id, user_id)
+#         print("SURVEYS:")
+#         print(surveys)
+#     make_slack_channel([user_id, 'U044JTNB8CE'], "Soccer")
 
 
 @slack_event_adapter.on('reaction_added')
